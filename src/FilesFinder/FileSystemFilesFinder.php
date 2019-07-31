@@ -32,4 +32,25 @@ class FileSystemFilesFinder implements FilesFinder
             return $uris;
         });
     }
+
+    public function findNew(string $rootPath, string $regex): Promise
+    {
+        return coroutine(function () use ($rootPath, $regex) {
+            $uris = [];
+
+            $directory = new \RecursiveDirectoryIterator($rootPath, \RecursiveDirectoryIterator::CURRENT_AS_PATHNAME | \RecursiveDirectoryIterator::SKIP_DOTS | \RecursiveDirectoryIterator::FOLLOW_SYMLINKS);
+            $iterator = new \RecursiveIteratorIterator($directory, \RecursiveIteratorIterator::SELF_FIRST);
+            $regexIterator = new \RegexIterator($iterator, $regex, \RegexIterator::MATCH);
+
+            foreach($regexIterator as $path) {
+                // Exclude any directories that also match the glob pattern
+                if (!is_dir($path)) {
+                    $uris[] = pathToUri($path);
+                }
+
+                yield timeout();
+            }
+            return $uris;
+        });
+    }
 }

@@ -34,10 +34,10 @@ set_exception_handler(function (\Throwable $e) use ($logger) {
 @cli_set_process_title('PHP Language Server');
 
 // If XDebug is enabled, restart without it
-$xdebugHandler = new XdebugHandler('PHPLS');
-$xdebugHandler->setLogger($logger);
-$xdebugHandler->check();
-unset($xdebugHandler);
+// $xdebugHandler = new XdebugHandler('PHPLS');
+// $xdebugHandler->setLogger($logger);
+// $xdebugHandler->check();
+// unset($xdebugHandler);
 
 if (!empty($options['tcp'])) {
     // Connect to a TCP server
