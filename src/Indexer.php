@@ -3,13 +3,14 @@ declare(strict_types = 1);
 
 namespace LanguageServer;
 
+use function Sabre\Event\coroutine;
 use LanguageServer\Cache\Cache;
+use LanguageServer\FilesFinder\ClientFilesFinder;
 use LanguageServer\FilesFinder\FilesFinder;
 use LanguageServer\Index\{DependenciesIndex, Index};
 use LanguageServerProtocol\MessageType;
-use Webmozart\PathUtil\Path;
 use Sabre\Event\Promise;
-use function Sabre\Event\coroutine;
+use Webmozart\PathUtil\Path;
 
 class Indexer
 {
@@ -104,10 +105,13 @@ class Indexer
     {
         return coroutine(function () {
 
-            $uris = yield $this->filesFinder->findNew($this->rootPath, '/^.+\.php$/i');
-
-            // $pattern = Path::makeAbsolute('**/*.php', $this->rootPath);
-            // $uris = yield $this->filesFinder->find($pattern);
+            if ($this->filesFinder instanceof ClientFilesFinder) {
+                $pattern = Path::makeAbsolute('**/*.php', $this->rootPath);
+                $uris = yield $this->filesFinder->find($pattern);
+            }
+            else {
+                $uris = yield $this->filesFinder->findRegex($this->rootPath, '/^.+\.(php|module|inc)$/i');
+            }
 
             $count = count($uris);
             $startTime = microtime(true);

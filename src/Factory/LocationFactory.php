@@ -6,7 +6,9 @@ use LanguageServerProtocol\Location;
 use LanguageServerProtocol\Position;
 use LanguageServerProtocol\Range;
 use Microsoft\PhpParser\Node;
+use Microsoft\PhpParser\Range as ParserRange;
 use Microsoft\PhpParser\PositionUtilities;
+use phpDocumentor\Reflection\DocBlock\Tags\Property;
 
 class LocationFactory
 {
@@ -24,7 +26,18 @@ class LocationFactory
             $node->getFileContents()
         );
 
-        return new Location($node->getUri(), new Range(
+        return self::fromUriAndRange($node->getUri(), $range);
+    }
+
+    /**
+     * Returns the location of a DocBlock Property
+     * @param string $uri
+     * @param Range $range
+     * @return self
+     */
+    public static function fromUriAndRange(string $uri, ParserRange $range): Location
+    {
+        return new Location($uri, new Range(
             new Position($range->start->line, $range->start->character),
             new Position($range->end->line, $range->end->character)
         ));

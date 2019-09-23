@@ -202,13 +202,15 @@ class CompletionProvider
         ) {
             // HTML, beginning of file
 
-            // Inside HTML and at the beginning of the file, propose <?php
-            $item = new CompletionItem('<?php', CompletionItemKind::KEYWORD);
-            $item->textEdit = new TextEdit(
-                new Range($pos, $pos),
-                stripStringOverlap($doc->getRange(new Range(new Position(0, 0), $pos)), '<?php')
-            );
-            $list->items[] = $item;
+            // Inside HTML and at the beginning of the file, propose <?php and <?php declare(strict_types=1);
+            foreach(['<?php', '<?php declare(strict_types=1);'] as $label) {
+                $item = new CompletionItem($label, CompletionItemKind::KEYWORD);
+                $item->textEdit = new TextEdit(
+                    new Range($pos, $pos),
+                    stripStringOverlap($doc->getRange(new Range(new Position(0, 0), $pos)), $label)
+                );
+                $list->items[] = $item;
+            }
 
         } elseif (
             $node instanceof Node\Expression\Variable

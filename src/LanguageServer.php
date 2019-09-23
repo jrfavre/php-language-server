@@ -278,7 +278,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
             // Support "Completion"
             $serverCapabilities->completionProvider = new CompletionOptions;
             $serverCapabilities->completionProvider->resolveProvider = false;
-            $serverCapabilities->completionProvider->triggerCharacters = ['$', '>'];
+            $serverCapabilities->completionProvider->triggerCharacters = ['$', '>', ':'];
 
             $serverCapabilities->signatureHelpProvider = new SignatureHelpOptions();
             $serverCapabilities->signatureHelpProvider->triggerCharacters = ['(', ','];
@@ -290,6 +290,15 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
 
             return new InitializeResult($serverCapabilities);
         });
+    }
+
+    /**
+     * Temp fix to avoid Exception : intialized() doesn't exist in dispatcher
+     * @see PR : https://github.com/felixfbecker/php-language-server/pull/308/files
+     */
+    public function initialized()
+    {
+        return;
     }
 
     /**

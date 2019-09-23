@@ -8,6 +8,7 @@ use LanguageServerProtocol\{Diagnostic, DiagnosticSeverity, Range, Position};
 use phpDocumentor\Reflection\DocBlockFactory;
 use Microsoft\PhpParser;
 use Microsoft\PhpParser\Node;
+use Microsoft\PhpParser\PositionUtilities;
 use Microsoft\PhpParser\Token;
 
 class TreeAnalyzer
@@ -155,80 +156,129 @@ class TreeAnalyzer
         if ($fqn !== null) {
             $this->definitionNodes[$fqn] = $node;
             $this->definitions[$fqn] = $this->definitionResolver->createDefinitionFromNode($node, $fqn);
-        } else {
 
-            $parent = $node->parent;
-            if (
-                (
-                    // $node->parent instanceof Node\Expression\ScopedPropertyAccessExpression ||
-                    ($node instanceof Node\Expression\ScopedPropertyAccessExpression ||
-                    $node instanceof Node\Expression\MemberAccessExpression)
-                    && !(
-                        $node->parent instanceof Node\Expression\CallExpression ||
-                        $node->memberName instanceof PhpParser\Token
-                    ))
-                || ($parent instanceof Node\Statement\NamespaceDefinition && $parent->name !== null && $parent->name->getStart() === $node->getStart())
-            ) {
+            // Collect @property from docblock in classes
+            if ($node instanceof Node\Statement\ClassDeclaration) {
+                $this->collectDefinitionsFromDocBlock($node, $fqn);
+            }
+            return;
+        }
+
+        $parent = $node->parent;
+        if (
+            (
+                // $node->parent instanceof Node\Expression\ScopedPropertyAccessExpression ||
+                ($node instanceof Node\Expression\ScopedPropertyAccessExpression ||
+                $node instanceof Node\Expression\MemberAccessExpression)
+                && !(
+                    $node->parent instanceof Node\Expression\CallExpression ||
+                    $node->memberName instanceof PhpParser\Token
+                ))
+            || ($parent instanceof Node\Statement\NamespaceDefinition && $parent->name !== null && $parent->name->getStart() === $node->getStart())
+        ) {
+            return;
+        }
+
+        $fqn = $this->definitionResolver->resolveReferenceNodeToFqn($node);
+        if (!$fqn) {
+            return;
+        }
+
+        if ($fqn === 'self' || $fqn === 'static') {
+            // Resolve self and static keywords to the containing class
+            // (This is not 100% correct for static but better than nothing)
+            $classNode = $node->getFirstAncestor(Node\Statement\ClassDeclaration::class);
+            if (!$classNode) {
                 return;
             }
-
-            $fqn = $this->definitionResolver->resolveReferenceNodeToFqn($node);
+            $fqn = (string)$classNode->getNamespacedName();
             if (!$fqn) {
                 return;
             }
-
-            if ($fqn === 'self' || $fqn === 'static') {
-                // Resolve self and static keywords to the containing class
-                // (This is not 100% correct for static but better than nothing)
-                $classNode = $node->getFirstAncestor(Node\Statement\ClassDeclaration::class);
-                if (!$classNode) {
-                    return;
-                }
-                $fqn = (string)$classNode->getNamespacedName();
-                if (!$fqn) {
-                    return;
-                }
-            } else if ($fqn === 'parent') {
-                // Resolve parent keyword to the base class FQN
-                $classNode = $node->getFirstAncestor(Node\Statement\ClassDeclaration::class);
-                if (!$classNode || !$classNode->classBaseClause || !$classNode->classBaseClause->baseClass) {
-                    return;
-                }
-                $fqn = (string)$classNode->classBaseClause->baseClass->getResolvedName();
-                if (!$fqn) {
-                    return;
-                }
+        } else if ($fqn === 'parent') {
+            // Resolve parent keyword to the base class FQN
+            $classNode = $node->getFirstAncestor(Node\Statement\ClassDeclaration::class);
+            if (!$classNode || !$classNode->classBaseClause || !$classNode->classBaseClause->baseClass) {
+                return;
             }
-
-            $this->addReference($fqn, $node);
-
-            if (
-                $node instanceof Node\QualifiedName
-                && ($node->isQualifiedName() || $node->parent instanceof Node\NamespaceUseClause)
-                && !($parent instanceof Node\Statement\NamespaceDefinition && $parent->name->getStart() === $node->getStart()
-                )
-            ) {
-                // Add references for each referenced namespace
-                $ns = $fqn;
-                while (($pos = strrpos($ns, '\\')) !== false) {
-                    $ns = substr($ns, 0, $pos);
-                    $this->addReference($ns, $node);
-                }
+            $fqn = (string)$classNode->classBaseClause->baseClass->getResolvedName();
+            if (!$fqn) {
+                return;
             }
+        }
 
-            // Namespaced constant access and function calls also need to register a reference
-            // to the global version because PHP falls back to global at runtime
-            // http://php.net/manual/en/language.namespaces.fallback.php
-            if (ParserHelpers\isConstantFetch($node) ||
-                ($parent instanceof Node\Expression\CallExpression
-                    && !(
-                        $node instanceof Node\Expression\ScopedPropertyAccessExpression ||
-                        $node instanceof Node\Expression\MemberAccessExpression
-                    ))) {
-                $parts = explode('\\', $fqn);
-                if (count($parts) > 1) {
-                    $globalFqn = end($parts);
-                    $this->addReference($globalFqn, $node);
+        $this->addReference($fqn, $node);
+
+        if (
+            $node instanceof Node\QualifiedName
+            && ($node->isQualifiedName() || $node->parent instanceof Node\NamespaceUseClause)
+            && !($parent instanceof Node\Statement\NamespaceDefinition && $parent->name->getStart() === $node->getStart()
+            )
+        ) {
+            // Add references for each referenced namespace
+            $ns = $fqn;
+            while (($pos = strrpos($ns, '\\')) !== false) {
+                $ns = substr($ns, 0, $pos);
+                $this->addReference($ns, $node);
+            }
+        }
+
+        // Namespaced constant access and function calls also need to register a reference
+        // to the global version because PHP falls back to global at runtime
+        // http://php.net/manual/en/language.namespaces.fallback.php
+        if (ParserHelpers\isConstantFetch($node) ||
+            ($parent instanceof Node\Expression\CallExpression
+                && !(
+                    $node instanceof Node\Expression\ScopedPropertyAccessExpression ||
+                    $node instanceof Node\Expression\MemberAccessExpression
+                ))) {
+            $parts = explode('\\', $fqn);
+            if (count($parts) > 1) {
+                $globalFqn = end($parts);
+                $this->addReference($globalFqn, $node);
+            }
+        }
+    }
+
+    private function collectDefinitionsFromDocBlock(Node\Statement\ClassDeclaration $node, string $fqn)
+    {
+        if ($docBlock = $this->definitionResolver->getDocBlock($node)){
+
+            $availableTags = ['property', 'property-read', 'property-write', 'method'];
+            // get the positions (Range) of the available tags
+            $tagsPositions = [];
+            $docCommentText = $node->getDocCommentText();
+            $pos = $node->classKeyword->getFullStart();
+            $fullText = $node->getLeadingCommentAndWhitespaceText();
+            $fullText = str_replace("\r\n", "\n", $fullText);
+            foreach (explode("\n", $fullText) as $line) {
+                $trimedLine = ltrim($line);
+                $lineLength = strlen($line);
+                if (strpos($trimedLine, '@') === 2) {
+                    foreach($availableTags as $tagName) {
+                        if (strpos($trimedLine, $tagName) === 3) {
+                            $tagsPositions[$tagName][] = PositionUtilities::getRangeFromPosition($pos, $lineLength, $node->getFileContents());
+                        }
+                    }
+                }
+                $pos += $lineLength+1; // +1 because of the text is exploded by char "\n"
+            }
+            foreach ($availableTags as $tagName) {
+                if ($tags = $docBlock->getTagsByName($tagName)) {
+                    foreach($tags as $index => $tag) {
+                        if ($tagName === 'method') {
+                            $tagFqn = $fqn.'->'.$tag->getMethodName().'()';
+                            $this->definitions[$tagFqn] = $this->definitionResolver->createDefinitionFromDocBlockMethod(
+                                $tag, $tagFqn, $tagsPositions[$tagName][$index], $node
+                            );
+                        }
+                        else {
+                            $tagFqn = $fqn.'->'.$tag->getVariableName();
+                            $this->definitions[$tagFqn] = $this->definitionResolver->createDefinitionFromDocBlockProperty(
+                                $tag, $tagFqn, $tagsPositions[$tagName][$index], $node
+                            );
+                        }
+                    }
                 }
             }
         }

@@ -5,12 +5,18 @@ namespace LanguageServer;
 
 use LanguageServer\Index\ReadableIndex;
 use LanguageServer\Factory\SymbolInformationFactory;
+use LanguageServerProtocol\ParameterInformation;
+use LanguageServerProtocol\SignatureInformation;
 use LanguageServerProtocol\SymbolInformation;
 use Microsoft\PhpParser;
 use Microsoft\PhpParser\Node;
 use Microsoft\PhpParser\FunctionLike;
+use Microsoft\PhpParser\Range;
 use phpDocumentor\Reflection\{
     DocBlock, DocBlockFactory, Fqsen, Type, TypeResolver, Types
+};
+use phpDocumentor\Reflection\DocBlock\Tags\{
+    BaseTag, Property, PropertyRead, PropertyWrite, Method
 };
 
 class DefinitionResolver
@@ -143,7 +149,7 @@ class DefinitionResolver
      * @param Node $node
      * @return DocBlock|null
      */
-    private function getDocBlock(Node $node)
+    public function getDocBlock(Node $node)
     {
         // TODO make more efficient (caching, ensure import table is in right format to begin with)
         $docCommentText = $node->getDocCommentText();
@@ -169,6 +175,50 @@ class DefinitionResolver
             }
         }
         return null;
+    }
+
+    /**
+     * Create de Definition from DocBlockProperty
+     */
+    public function createDefinitionFromDocBlockProperty(BaseTag $property, string $fqn, Range $position, Node $node): Definition
+    {
+        $def = new Definition;
+        $def->fqn = $fqn;
+        $def->canBeInstantiated = false;
+        $def->isMember = true;
+        $def->roamed = false;
+        $def->isStatic = false;
+        $def->symbolInformation = SymbolInformationFactory::fromDocBlockTag($property, $position, $fqn, $node);
+        $def->documentaton = $property->getDescription()->render();
+        $def->type = $property->getType();
+        return $def;
+    }
+
+    /**
+     * Create de Definition from DocBlockMethod
+     */
+    public function createDefinitionFromDocBlockMethod(Method $method, string $fqn, Range $position, Node $node): Definition
+    {
+        $def = new Definition;
+        $def->fqn = $fqn;
+        $def->canBeInstantiated = false;
+        $def->isMember = true;
+        $def->roamed = false;
+        $def->isStatic = ($method->isStatic()) ? true : false;
+        $def->symbolInformation = SymbolInformationFactory::fromDocBlockTag($method, $position, $fqn, $node);
+        $def->documentaton = $method->getDescription()->render();
+        $def->type = $method->getReturnType();
+        $def->declarationLine = (string) $method;
+        $parameters = [];
+        $args = [];
+        foreach($method->getArguments() as $arg) {
+            $variable = (string) $arg['type'].' '.$arg['name'];
+            $parameters[] = new ParameterInformation($variable);
+            $args[] = $variable;
+        }
+        $label = '('.implode(', ', $args).')';
+        $def->signatureInformation = new SignatureInformation($label, $parameters, $def->documentation);
+        return $def;
     }
 
     /**

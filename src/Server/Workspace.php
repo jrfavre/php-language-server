@@ -114,6 +114,16 @@ class Workspace
     }
 
     /**
+     * Temp fix to avoid Exception : intialized() doesn't exist in dispatcher
+     * @see PR : https://github.com/felixfbecker/php-language-server/pull/308/files
+     * IMPORTANT (remove modif in AdvancedJsonRpc\Error::cancelRequest)
+     */
+    public function didChangeConfiguration($settings = null)
+    {
+        return;
+    }
+
+    /**
      * The workspace references request is sent from the client to the server to locate project-wide references to a symbol given its description / metadata.
      *
      * @param SymbolDescriptor $query Partial metadata about the symbol that is being searched for.

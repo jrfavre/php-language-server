@@ -33,10 +33,11 @@ class FileSystemFilesFinder implements FilesFinder
         });
     }
 
-    public function findNew(string $rootPath, string $regex): Promise
+    public function findRegex(string $rootPath, string $regex): Promise
     {
         return coroutine(function () use ($rootPath, $regex) {
             $uris = [];
+            $rootpathIndex = strlen($rootPath.'/vendor/')-1;
 
             $directory = new \RecursiveDirectoryIterator($rootPath, \RecursiveDirectoryIterator::CURRENT_AS_PATHNAME | \RecursiveDirectoryIterator::SKIP_DOTS | \RecursiveDirectoryIterator::FOLLOW_SYMLINKS);
             $iterator = new \RecursiveIteratorIterator($directory, \RecursiveIteratorIterator::SELF_FIRST);
@@ -45,7 +46,11 @@ class FileSystemFilesFinder implements FilesFinder
             foreach($regexIterator as $path) {
                 // Exclude any directories that also match the glob pattern
                 if (!is_dir($path)) {
-                    $uris[] = pathToUri($path);
+                    // Exclude any vendor directory (inside symlinks)
+                    // TODO : avoid harcoding vendor dir
+                    if (strpos($path, '/vendor/', $rootpathIndex) === false) {
+                        $uris[] = pathToUri($path);
+                    }
                 }
 
                 yield timeout();

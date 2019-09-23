@@ -6,8 +6,10 @@ use LanguageServerProtocol\Location;
 use LanguageServerProtocol\SymbolInformation;
 use LanguageServerProtocol\SymbolKind;
 use Microsoft\PhpParser\Node;
+use Microsoft\PhpParser\Range;
 use Microsoft\PhpParser\ResolvedName;
 use LanguageServer\Factory\LocationFactory;
+use phpDocumentor\Reflection\DocBlock\Tags\{BaseTag, Method};
 
 class SymbolInformationFactory
 {
@@ -82,10 +84,32 @@ class SymbolInformationFactory
 
         $symbol->location = LocationFactory::fromNode($node);
         if ($fqn !== null) {
-            $parts = preg_split('/(::|->|\\\\)/', $fqn);
-            array_pop($parts);
-            $symbol->containerName = implode('\\', $parts);
+            $symbol->containerName = self::getContainerName($fqn);
         }
         return $symbol;
+    }
+
+    /**
+     * Converts a DocBlock Property to a SymbolInformation
+     *
+     * @param Property $property
+     * @param string $fqn
+     * @return SymbolInformation|null
+     */
+    public static function fromDocBlockTag(BaseTag $tag, Range $position, string $fqn, Node\Statement\ClassDeclaration $node)
+    {
+        $symbol = new SymbolInformation();
+        $symbol->name = ($tag instanceof Method) ? $tag->getMethodName() : $tag->getVariableName();
+        $symbol->kind = ($tag instanceof Method) ? SymbolKind::METHOD : SymbolKind::PROPERTY;
+        $symbol->location = LocationFactory::fromUriAndRange($node->getUri(), $position);
+        $symbol->containerName = self::getContainerName($fqn);
+        return $symbol;
+    }
+
+    private static function getContainerName(string $fqn): string
+    {
+        $parts = preg_split('/(::|->|\\\\)/', $fqn);
+        array_pop($parts);
+        return implode('\\', $parts);
     }
 }
